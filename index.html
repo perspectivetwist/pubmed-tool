@@ -76,6 +76,37 @@
         #search-btn:hover { background: #33ffc5; box-shadow: var(--green-glow); }
         #search-btn:disabled { background: #1a5c45; color: #0a2e23; cursor: not-allowed; box-shadow: none; }
 
+        /* Publication Type Filters */
+        #pub-type-filters {
+            display: flex; flex-wrap: wrap; gap: 0.4rem 1rem;
+            margin-bottom: 1rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+        #pub-type-filters label {
+            display: flex; align-items: center; gap: 0.35rem;
+            cursor: pointer; user-select: none;
+            transition: color 0.15s;
+        }
+        #pub-type-filters label:hover { color: var(--text); }
+        #pub-type-filters input[type="checkbox"] {
+            accent-color: var(--green);
+            width: 14px; height: 14px; cursor: pointer;
+        }
+        #pub-type-filters .filter-label { font-size: 0.75rem; letter-spacing: 0.03em; }
+        #pub-type-filters .filter-hint {
+            display: none; position: absolute;
+            background: var(--surface-raised); border: 1px solid var(--border);
+            border-radius: 4px; padding: 0.4rem 0.6rem;
+            font-size: 0.7rem; color: var(--text-dim);
+            max-width: 220px; z-index: 10;
+            bottom: 100%; left: 0; margin-bottom: 4px;
+            white-space: normal;
+        }
+        #pub-type-filters label { position: relative; }
+        #pub-type-filters label:hover .filter-hint { display: block; }
+
         /* Status */
         #status { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.25rem; min-height: 1.4rem; font-family: 'IBM Plex Mono', monospace; }
         .error { color: var(--orange); }
@@ -145,6 +176,36 @@
         }
         .status-loading { animation: pulse-glow 1.5s ease-in-out infinite; }
 
+        /* MeSH Terms Display */
+        #mesh-terms {
+            display: none;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 1.25rem;
+            padding: 0.6rem 0.85rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            line-height: 1.6;
+        }
+        #mesh-terms .mesh-label {
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-right: 0.4rem;
+        }
+        #mesh-terms .mesh-found {
+            color: var(--green);
+        }
+        #mesh-terms .mesh-notfound {
+            color: var(--text-dim);
+        }
+        #mesh-terms .mesh-separator {
+            color: var(--border);
+            margin: 0 0.3rem;
+        }
+
         /* Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: var(--base); }
@@ -180,7 +241,15 @@
         <input type="text" id="query" placeholder="Fragestellung eingeben, z.B. 'Migräne Behandlung bei Kindern'" required>
         <button type="submit" id="search-btn">Suchen</button>
     </form>
+    <div id="pub-type-filters">
+        <label><input type="checkbox" data-pt="systematic[sb]" checked><span class="filter-label">Systematische Reviews</span><span class="filter-hint">Alle Studien zu einem Thema systematisch zusammengefasst (höchste Evidenz)</span></label>
+        <label><input type="checkbox" data-pt="meta-analysis[pt]" checked><span class="filter-label">Meta-Analysen</span><span class="filter-hint">Studien statistisch zusammengeführt und quantitativ ausgewertet</span></label>
+        <label><input type="checkbox" data-pt="randomized controlled trial[pt]" checked><span class="filter-label">RCTs</span><span class="filter-hint">Randomisierte kontrollierte Studien — Goldstandard klinischer Forschung</span></label>
+        <label><input type="checkbox" data-pt="case reports[pt]"><span class="filter-label">Fallberichte</span><span class="filter-hint">Einzelfallbeschreibungen — niedrige Evidenz, aber nützlich bei seltenen Erkrankungen</span></label>
+        <label><input type="checkbox" data-pt="editorial[pt]"><span class="filter-label">Editorials</span><span class="filter-hint">Expertenmeinungen und Kommentare — keine eigenen Daten</span></label>
+    </div>
     <div id="status"></div>
+    <div id="mesh-terms"></div>
 
     <div id="output">
         <div id="synthesis-section" class="section">
@@ -235,6 +304,7 @@ document.getElementById('auth-password').addEventListener('keydown', (e) => {
 });
 const ESEARCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const EFETCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi';
+const ESUMMARY_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const API_KEY_STORAGE = 'pubmed-tool-anthropic-key';
@@ -290,6 +360,43 @@ document.getElementById('api-key-save').addEventListener('click', () => {
 });
 
 updateApiKeyUI();
+
+// --- Publikationstyp-Filter ---
+const PUB_TYPE_STORAGE = 'pubmed-tool-pub-filters';
+
+function loadPubTypeFilters() {
+    const saved = localStorage.getItem(PUB_TYPE_STORAGE);
+    if (!saved) return; // Defaults aus HTML verwenden
+    try {
+        const state = JSON.parse(saved);
+        document.querySelectorAll('#pub-type-filters input[type="checkbox"]').forEach(cb => {
+            const pt = cb.getAttribute('data-pt');
+            if (pt in state) cb.checked = state[pt];
+        });
+    } catch { /* ignore corrupt data */ }
+}
+
+function savePubTypeFilters() {
+    const state = {};
+    document.querySelectorAll('#pub-type-filters input[type="checkbox"]').forEach(cb => {
+        state[cb.getAttribute('data-pt')] = cb.checked;
+    });
+    localStorage.setItem(PUB_TYPE_STORAGE, JSON.stringify(state));
+}
+
+function getActivePubTypeFilter() {
+    const active = [];
+    document.querySelectorAll('#pub-type-filters input[type="checkbox"]:checked').forEach(cb => {
+        active.push(cb.getAttribute('data-pt'));
+    });
+    if (active.length === 0) return null; // Kein Filter aktiv
+    return active.join(' OR ');
+}
+
+loadPubTypeFilters();
+document.querySelectorAll('#pub-type-filters input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', savePubTypeFilters);
+});
 
 // Deutsche → englische Übersetzung häufiger neurologischer/medizinischer Begriffe
 const MEDICAL_TERMS_DE_EN = {
@@ -428,6 +535,115 @@ function optimizeQueryLocal(rawInput) {
     return query;
 }
 
+// MeSH-Term Lookup: Validiert einen Suchbegriff gegen die PubMed MeSH-Datenbank
+async function lookupMeSH(term) {
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+
+        // Schritt 1: esearch – MeSH-UID für den Begriff finden
+        const searchParams = new URLSearchParams({
+            db: 'mesh',
+            term: term,
+            retmax: '1',
+            retmode: 'json'
+        });
+        const searchResp = await fetch(`${ESEARCH_URL}?${searchParams}`, { signal: controller.signal });
+        if (!searchResp.ok) { clearTimeout(timeout); return { meshTerm: term, uid: null, found: false }; }
+
+        const searchData = await searchResp.json();
+        const ids = searchData.esearchresult?.idlist || [];
+        if (ids.length === 0) { clearTimeout(timeout); return { meshTerm: term, uid: null, found: false }; }
+
+        const uid = ids[0];
+
+        // Schritt 2: esummary – offiziellen MeSH-Term-Namen holen
+        const summaryParams = new URLSearchParams({
+            db: 'mesh',
+            id: uid,
+            retmode: 'json'
+        });
+        const summaryResp = await fetch(`${ESUMMARY_URL}?${summaryParams}`, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (!summaryResp.ok) return { meshTerm: term, uid, found: false };
+
+        const summaryData = await summaryResp.json();
+        const docsum = summaryData.result?.[uid];
+        const meshName = docsum?.ds_meshterms?.[0] || docsum?.title || null;
+
+        if (meshName) {
+            return { meshTerm: meshName, uid, found: true };
+        }
+        return { meshTerm: term, uid, found: false };
+    } catch {
+        return { meshTerm: term, uid: null, found: false };
+    }
+}
+
+// Batch MeSH-Auflösung: Splittet eine Query in Begriffe und validiert jeden gegen MeSH
+async function resolveMeSHTerms(queryString) {
+    // Query in einzelne Begriffe splitten: AND/OR als Trenner, Klammern/Tags entfernen
+    const cleaned = queryString
+        .replace(/\[(?:MeSH|mh|tiab|pt|ti|ab)\]/gi, '')  // PubMed-Tags entfernen
+        .replace(/[()]/g, '')                               // Klammern entfernen
+        .replace(/"/g, '');                                  // Anführungszeichen entfernen
+
+    const terms = cleaned
+        .split(/\b(?:AND|OR)\b/i)
+        .map(t => t.trim())
+        .filter(t => t.length > 1);
+
+    if (terms.length === 0) return { optimizedQuery: queryString, displayTerms: [] };
+
+    // Parallel alle Begriffe gegen MeSH validieren
+    const results = await Promise.allSettled(terms.map(t => lookupMeSH(t)));
+
+    const meshParts = [];
+    const displayTerms = [];
+
+    for (let i = 0; i < terms.length; i++) {
+        const result = results[i];
+        if (result.status === 'fulfilled' && result.value.found) {
+            const { meshTerm } = result.value;
+            meshParts.push(`"${meshTerm}"[MeSH]`);
+            displayTerms.push({ term: meshTerm, found: true });
+        } else {
+            meshParts.push(`${terms[i]}[tiab]`);
+            displayTerms.push({ term: terms[i], found: false });
+        }
+    }
+
+    const optimizedQuery = meshParts.join(' AND ');
+    return { optimizedQuery, displayTerms };
+}
+
+// MeSH-Terms im UI anzeigen
+function displayMeSHTerms(displayTerms) {
+    const el = document.getElementById('mesh-terms');
+    if (!displayTerms || displayTerms.length === 0) {
+        el.style.display = 'none';
+        return;
+    }
+
+    const meshFound = displayTerms.filter(t => t.found);
+    const meshNotFound = displayTerms.filter(t => !t.found);
+
+    let html = '';
+    if (meshFound.length > 0) {
+        html += '<span class="mesh-label mesh-found">MeSH:</span>';
+        html += meshFound.map(t => `<span class="mesh-found">${t.term}</span>`).join('<span class="mesh-separator">&middot;</span>');
+    }
+    if (meshNotFound.length > 0) {
+        if (meshFound.length > 0) html += '<br>';
+        html += '<span class="mesh-label mesh-notfound">Freitext:</span>';
+        html += meshNotFound.map(t => `<span class="mesh-notfound">${t.term}</span>`).join('<span class="mesh-separator">&middot;</span>');
+    }
+
+    el.innerHTML = html;
+    el.style.display = 'block';
+}
+
 // Claude-basierte Query-Optimierung: übersetzt deutsche Fragestellungen
 // in optimale englische PubMed-Suchbegriffe mit MeSH-Terms
 async function optimizeQueryWithClaude(rawInput) {
@@ -472,10 +688,28 @@ async function optimizeQuery(rawInput) {
     const claudeQuery = await optimizeQueryWithClaude(rawInput);
     const baseQuery = claudeQuery || optimizeQueryLocal(rawInput);
 
-    // Review-Artikel bevorzugen
-    const reviewQuery = `(${baseQuery}) AND (review[pt] OR systematic review[pt] OR meta-analysis[pt])`;
+    // MeSH-Validierung der Suchbegriffe
+    setStatus('MeSH-Terms werden aufgelöst...', true);
+    let meshResult;
+    try {
+        meshResult = await resolveMeSHTerms(baseQuery);
+    } catch {
+        meshResult = { optimizedQuery: baseQuery, displayTerms: [] };
+    }
 
-    return { reviewQuery, fallbackQuery: baseQuery, usedClaude: !!claudeQuery };
+    // MeSH-Terms anzeigen
+    displayMeSHTerms(meshResult.displayTerms);
+
+    // MeSH-optimierte Query verwenden, Fallback auf Basis-Query
+    const effectiveQuery = meshResult.optimizedQuery || baseQuery;
+
+    // Publikationstyp-Filter aus UI-Checkboxen
+    const pubTypeFilter = getActivePubTypeFilter();
+    const filteredQuery = pubTypeFilter
+        ? `(${effectiveQuery}) AND (${pubTypeFilter})`
+        : effectiveQuery;
+
+    return { filteredQuery, fallbackQuery: effectiveQuery, baseQuery, usedClaude: !!claudeQuery, hasFilter: !!pubTypeFilter };
 }
 
 async function fetchWithTimeout(url, timeoutMs = 30000) {
@@ -696,32 +930,45 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
     searchBtn.disabled = true;
     setStatus('Suchanfrage wird optimiert...', true);
     outputEl.style.display = 'none';
+    document.getElementById('mesh-terms').style.display = 'none';
 
     try {
-        const { reviewQuery, fallbackQuery, usedClaude } = await optimizeQuery(rawQuery);
-        let isReviewSearch = true;
+        const { filteredQuery, fallbackQuery, baseQuery, usedClaude, hasFilter } = await optimizeQuery(rawQuery);
+        let filterDropped = false;
         let searchStrategy = '';
 
         // Mehrstufige Suchstrategie für maximale Trefferanzahl
         setStatus('Suche in PubMed...', true);
 
-        // Stufe 1: Review-Artikel mit optimierter Query
-        let data = await searchPubMed(reviewQuery);
+        // Stufe 1: Query mit aktivem Publikationstyp-Filter
+        let data = await searchPubMed(filteredQuery);
         let result = data.esearchresult;
         let ids = result.idlist;
 
         if (ids.length >= 5) {
-            searchStrategy = 'Reviews/Meta-Analysen bevorzugt';
+            searchStrategy = hasFilter ? 'gefiltert nach Publikationstyp' : 'alle Artikeltypen';
         } else {
-            // Stufe 2: Alle Artikeltypen mit optimierter Query
+            // Stufe 2: Alle Artikeltypen mit optimierter Query (Filter fallen lassen)
             data = await searchPubMed(fallbackQuery);
             result = data.esearchresult;
             ids = result.idlist;
-            isReviewSearch = false;
+            filterDropped = hasFilter;
             searchStrategy = 'alle Artikeltypen';
         }
 
-        // Stufe 3: Falls Claude-Query zu wenig Treffer liefert, lokales Wörterbuch probieren
+        // Stufe 3: Falls MeSH-Query zu restriktiv, ungetaggte Query probieren
+        if (ids.length < 5 && baseQuery && baseQuery !== fallbackQuery) {
+            const baseData = await searchPubMed(baseQuery);
+            const baseResult = baseData.esearchresult;
+            if (baseResult.idlist.length > ids.length) {
+                result = baseResult;
+                ids = baseResult.idlist;
+                filterDropped = hasFilter;
+                searchStrategy = 'alle Artikeltypen, ohne MeSH-Tags';
+            }
+        }
+
+        // Stufe 4: Falls Claude-Query zu wenig Treffer liefert, lokales Wörterbuch probieren
         if (ids.length < 5 && usedClaude) {
             const localQuery = optimizeQueryLocal(rawQuery);
             if (localQuery !== fallbackQuery) {
@@ -792,7 +1039,11 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
         document.getElementById('sources-content').innerHTML = sourcesHtml;
 
         outputEl.style.display = 'block';
-        setStatus(`${count} Treffer, ${articles.length} Artikel analysiert (${searchStrategy})`);
+        let statusText = `${count} Treffer, ${articles.length} Artikel analysiert (${searchStrategy})`;
+        if (filterDropped) {
+            statusText += ' — Keine passenden Artikel mit gewähltem Filter gefunden, zeige alle Artikeltypen';
+        }
+        setStatus(statusText);
         searchBtn.disabled = false;
     } catch (err) {
         setStatus('');
