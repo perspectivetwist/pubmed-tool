@@ -141,9 +141,7 @@
         }
         #filter-info-popup ul { margin: 0.5rem 0 0 1.25rem; }
         #filter-info-popup li { margin-bottom: 0.3rem; }
-        #filter-info-popup .ev-high { color: var(--green); }
-        #filter-info-popup .ev-mid { color: var(--text); }
-        #filter-info-popup .ev-low { color: var(--text-dim); }
+        #filter-info-popup .ev-label { color: var(--green); }
 
         /* Status */
         #status { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.25rem; min-height: 1.4rem; font-family: 'IBM Plex Mono', monospace; }
@@ -287,11 +285,11 @@
         <strong>Evidenzhierarchie</strong>
         <p style="margin-top:0.4rem;">Die Auswahl beeinflusst die Qualität der Ergebnisse. Höhere Evidenzstufen liefern verlässlichere Aussagen, aber weniger Treffer.</p>
         <ul>
-            <li><span class="ev-high">Systematische Reviews</span> — Fassen alle Studien zu einem Thema zusammen. Höchste Evidenzstufe.</li>
-            <li><span class="ev-high">Meta-Analysen</span> — Vereinen Daten mehrerer Studien statistisch. Starke quantitative Aussagekraft.</li>
-            <li><span class="ev-mid">RCTs</span> — Randomisierte kontrollierte Studien. Goldstandard für Therapievergleiche.</li>
-            <li><span class="ev-low">Fallberichte</span> — Einzelfälle. Nützlich bei seltenen Erkrankungen, aber keine Verallgemeinerung möglich.</li>
-            <li><span class="ev-low">Editorials</span> — Expertenmeinungen ohne eigene Daten. Für Kontext, nicht als Evidenz.</li>
+            <li><span class="ev-label">Systematische Reviews</span> — Fassen alle Studien zu einem Thema zusammen. Höchste Evidenzstufe.</li>
+            <li><span class="ev-label">Meta-Analysen</span> — Vereinen Daten mehrerer Studien statistisch. Starke quantitative Aussagekraft.</li>
+            <li><span class="ev-label">RCTs</span> — Randomisierte kontrollierte Studien. Goldstandard für Therapievergleiche.</li>
+            <li><span class="ev-label">Fallberichte</span> — Einzelfälle. Nützlich bei seltenen Erkrankungen, aber keine Verallgemeinerung möglich.</li>
+            <li><span class="ev-label">Editorials</span> — Expertenmeinungen ohne eigene Daten. Für Kontext, nicht als Evidenz.</li>
         </ul>
         <p style="margin-top:0.5rem;">Empfehlung: Für einen Überblick die Standardauswahl (Reviews, Meta-Analysen, RCTs) beibehalten. Nur bei seltenen Themen oder wenig Treffern Fallberichte aktivieren.</p>
     </div>
