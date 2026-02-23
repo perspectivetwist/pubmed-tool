@@ -653,7 +653,7 @@ async function resolveMeSHTerms(queryString) {
 
     if (allTerms.length === 0) return { optimizedQuery: queryString, displayTerms: [] };
 
-    // Deduplizieren (case-insensitive) und auf max 8 Terms limitieren
+    // Deduplizieren (case-insensitive) und auf max 5 Terms limitieren
     const seen = new Set();
     const terms = [];
     for (const t of allTerms) {
@@ -662,18 +662,20 @@ async function resolveMeSHTerms(queryString) {
             seen.add(key);
             terms.push(t);
         }
-        if (terms.length >= 8) break;
+        if (terms.length >= 5) break;
     }
 
-    // In Batches von 3 verarbeiten mit 400ms Pause dazwischen (PubMed: max 3 req/s)
+    // Sequentiell verarbeiten mit 400ms Pause zwischen jedem Lookup
+    // Jeder lookupMeSH macht 2 Requests (esearch + esummary) — bei paralleler
+    // Verarbeitung wird PubMeds Rate-Limit (3 req/s ohne API Key) überschritten
     const results = [];
-    const BATCH_SIZE = 3;
-    for (let i = 0; i < terms.length; i += BATCH_SIZE) {
-        const batch = terms.slice(i, i + BATCH_SIZE);
-        const batchResults = await Promise.allSettled(batch.map(t => lookupMeSH(t)));
-        results.push(...batchResults);
-        if (i + BATCH_SIZE < terms.length) {
-            await new Promise(r => setTimeout(r, 400));
+    for (let i = 0; i < terms.length; i++) {
+        if (i > 0) await new Promise(r => setTimeout(r, 400));
+        try {
+            const value = await lookupMeSH(terms[i]);
+            results.push({ status: 'fulfilled', value });
+        } catch {
+            results.push({ status: 'rejected' });
         }
     }
 
@@ -772,7 +774,7 @@ async function optimizeQuery(rawInput) {
     try {
         meshResult = await resolveMeSHTerms(baseQuery);
         // Pause nach MeSH-Lookups, damit PubMed Rate-Limit sich erholt
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 1000));
     } catch {
         meshResult = { optimizedQuery: baseQuery, displayTerms: [] };
     }
