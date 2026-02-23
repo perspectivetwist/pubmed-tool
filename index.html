@@ -125,6 +125,25 @@ function optimizeQuery(rawInput) {
     return { reviewQuery, fallbackQuery: query };
 }
 
+async function fetchWithTimeout(url, timeoutMs = 30000) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        return response;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw new Error('Zeitüberschreitung: PubMed antwortet nicht. Bitte später erneut versuchen.');
+        }
+        if (!navigator.onLine) {
+            throw new Error('Keine Internetverbindung. Bitte Verbindung prüfen und erneut versuchen.');
+        }
+        throw new Error('Netzwerkfehler: PubMed ist nicht erreichbar. Bitte später erneut versuchen.');
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 async function searchPubMed(term) {
     const params = new URLSearchParams({
         db: 'pubmed',
@@ -137,8 +156,10 @@ async function searchPubMed(term) {
         sort: 'relevance'
     });
 
-    const response = await fetch(`${ESEARCH_URL}?${params}`);
-    if (!response.ok) throw new Error(`PubMed API Fehler: ${response.status}`);
+    const response = await fetchWithTimeout(`${ESEARCH_URL}?${params}`);
+    if (response.status === 429) throw new Error('Zu viele Anfragen an PubMed. Bitte 10 Sekunden warten und erneut versuchen.');
+    if (response.status >= 500) throw new Error('PubMed-Server vorübergehend nicht verfügbar. Bitte später erneut versuchen.');
+    if (!response.ok) throw new Error(`PubMed-Suche fehlgeschlagen (Fehlercode ${response.status}).`);
     return response.json();
 }
 
@@ -151,8 +172,10 @@ async function fetchArticles(pmids) {
         retmode: 'xml'
     });
 
-    const response = await fetch(`${EFETCH_URL}?${params}`);
-    if (!response.ok) throw new Error(`PubMed EFetch Fehler: ${response.status}`);
+    const response = await fetchWithTimeout(`${EFETCH_URL}?${params}`, 60000);
+    if (response.status === 429) throw new Error('Zu viele Anfragen an PubMed. Bitte 10 Sekunden warten und erneut versuchen.');
+    if (response.status >= 500) throw new Error('PubMed-Server vorübergehend nicht verfügbar. Bitte später erneut versuchen.');
+    if (!response.ok) throw new Error(`Artikel konnten nicht geladen werden (Fehlercode ${response.status}).`);
 
     const xmlText = await response.text();
     const parser = new DOMParser();
@@ -223,14 +246,27 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
             isReviewSearch = false;
         }
 
-        const count = result.count;
+        const count = parseInt(result.count);
         const ids = result.idlist;
-        const filterHint = isReviewSearch ? ' (Reviews/Meta-Analysen bevorzugt)' : ' (alle Artikeltypen)';
 
+        // Keine Treffer
+        if (count === 0 || ids.length === 0) {
+            statusEl.textContent = 'Keine Artikel gefunden. Bitte anderen Suchbegriff versuchen oder englische Fachbegriffe verwenden.';
+            resultsEl.style.display = 'none';
+            return;
+        }
+
+        const filterHint = isReviewSearch ? ' (Reviews/Meta-Analysen bevorzugt)' : ' (alle Artikeltypen)';
         statusEl.textContent = `${ids.length} Artikel werden abgerufen...`;
 
         // EFetch: Abstracts und Metadaten laden
         const articles = await fetchArticles(ids);
+
+        if (articles.length === 0) {
+            statusEl.textContent = 'Artikeldaten konnten nicht geladen werden. Bitte erneut versuchen.';
+            resultsEl.style.display = 'none';
+            return;
+        }
 
         statusEl.textContent = `${count} Treffer, ${articles.length} Artikel geladen${filterHint}`;
         resultsEl.textContent = JSON.stringify(articles.map(a => ({
@@ -243,7 +279,7 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
         })), null, 2);
         resultsEl.style.display = 'block';
     } catch (err) {
-        statusEl.textContent = `Fehler: ${err.message}`;
+        statusEl.textContent = err.message;
         resultsEl.style.display = 'none';
     }
 });
