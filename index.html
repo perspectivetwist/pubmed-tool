@@ -638,6 +638,7 @@ async function lookupMeSH(term) {
 }
 
 // Batch MeSH-Auflösung: Splittet eine Query in Begriffe und validiert jeden gegen MeSH
+// Limitiert auf max 8 unique Terms in Batches von 3, um PubMed Rate-Limiting (3 req/s) zu vermeiden
 async function resolveMeSHTerms(queryString) {
     // Query in einzelne Begriffe splitten: AND/OR als Trenner, Klammern/Tags entfernen
     const cleaned = queryString
@@ -645,15 +646,36 @@ async function resolveMeSHTerms(queryString) {
         .replace(/[()]/g, '')                               // Klammern entfernen
         .replace(/"/g, '');                                  // Anführungszeichen entfernen
 
-    const terms = cleaned
+    const allTerms = cleaned
         .split(/\b(?:AND|OR)\b/i)
         .map(t => t.trim())
         .filter(t => t.length > 1);
 
-    if (terms.length === 0) return { optimizedQuery: queryString, displayTerms: [] };
+    if (allTerms.length === 0) return { optimizedQuery: queryString, displayTerms: [] };
 
-    // Parallel alle Begriffe gegen MeSH validieren
-    const results = await Promise.allSettled(terms.map(t => lookupMeSH(t)));
+    // Deduplizieren (case-insensitive) und auf max 8 Terms limitieren
+    const seen = new Set();
+    const terms = [];
+    for (const t of allTerms) {
+        const key = t.toLowerCase();
+        if (!seen.has(key)) {
+            seen.add(key);
+            terms.push(t);
+        }
+        if (terms.length >= 8) break;
+    }
+
+    // In Batches von 3 verarbeiten mit 400ms Pause dazwischen (PubMed: max 3 req/s)
+    const results = [];
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < terms.length; i += BATCH_SIZE) {
+        const batch = terms.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.allSettled(batch.map(t => lookupMeSH(t)));
+        results.push(...batchResults);
+        if (i + BATCH_SIZE < terms.length) {
+            await new Promise(r => setTimeout(r, 400));
+        }
+    }
 
     const meshParts = [];
     const displayTerms = [];
