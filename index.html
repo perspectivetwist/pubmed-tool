@@ -310,6 +310,50 @@ const MEDICAL_TERMS_DE_EN = {
     'als': 'amyotrophic lateral sclerosis',
     'amyotrophe lateralsklerose': 'amyotrophic lateral sclerosis',
     'neurodegeneration': 'neurodegeneration',
+    'differentialdiagnose': 'differential diagnosis',
+    'differenzialdiagnose': 'differential diagnosis',
+    'psychiatrische': 'psychiatric',
+    'psychiatrisch': 'psychiatric',
+    'psychische': 'psychiatric',
+    'neurologische': 'neurological',
+    'neurologisch': 'neurological',
+    'autoimmune': 'autoimmune',
+    'autoimmun': 'autoimmune',
+    'antikörper': 'antibodies',
+    'liquor': 'cerebrospinal fluid',
+    'magnetresonanztomographie': 'MRI',
+    'mrt': 'MRI',
+    'eeg': 'EEG',
+    'elektroenzephalographie': 'EEG',
+    'pathophysiologie': 'pathophysiology',
+    'immuntherapie': 'immunotherapy',
+    'plasmapherese': 'plasmapheresis',
+    'immunglobuline': 'immunoglobulins',
+    'kortikosteroide': 'corticosteroids',
+    'steroide': 'steroids',
+    'rezidiv': 'relapse',
+    'schub': 'relapse',
+    'remission': 'remission',
+    'chronisch': 'chronic',
+    'akut': 'acute',
+    'subakut': 'subacute',
+    'selten': 'rare',
+    'häufig': 'common',
+    'inzidenz': 'incidence',
+    'prävalenz': 'prevalence',
+    'komorbidität': 'comorbidity',
+    'nebenwirkungen': 'side effects',
+    'wirksamkeit': 'efficacy',
+    'sicherheit': 'safety',
+    'langzeitprognose': 'long-term prognosis',
+    'outcome': 'outcome',
+    'ergebnis': 'outcome',
+    'biomarker': 'biomarker',
+    'fallserie': 'case series',
+    'kohortenstudie': 'cohort study',
+    'randomisiert': 'randomized',
+    'doppelblind': 'double-blind',
+    'placebo': 'placebo',
     'und': 'AND',
     'oder': 'OR',
     'bei': '',
@@ -321,10 +365,10 @@ const MEDICAL_TERMS_DE_EN = {
     'aktuelle': 'current',
 };
 
-function optimizeQuery(rawInput) {
+// Lokales Wörterbuch als schneller Fallback (ohne API-Call)
+function optimizeQueryLocal(rawInput) {
     let query = rawInput.trim().toLowerCase();
 
-    // Ersetze deutsche Mehrwort-Terme zuerst (längste zuerst)
     const sortedTerms = Object.entries(MEDICAL_TERMS_DE_EN)
         .sort((a, b) => b[0].length - a[0].length);
 
@@ -333,13 +377,58 @@ function optimizeQuery(rawInput) {
         query = query.replace(regex, en);
     }
 
-    // Leere Ersetzungen und Mehrfach-Leerzeichen bereinigen
     query = query.replace(/\s+/g, ' ').trim();
+    return query;
+}
 
-    // Review-Artikel bevorzugen: Suche zuerst mit Review-Filter
-    const reviewQuery = `(${query}) AND (review[pt] OR systematic review[pt] OR meta-analysis[pt])`;
+// Claude-basierte Query-Optimierung: übersetzt deutsche Fragestellungen
+// in optimale englische PubMed-Suchbegriffe mit MeSH-Terms
+async function optimizeQueryWithClaude(rawInput) {
+    const apiKey = getApiKey();
+    if (!apiKey) return null;
 
-    return { reviewQuery, fallbackQuery: query };
+    try {
+        const resp = await fetch(CLAUDE_API_URL, {
+            method: 'POST',
+            headers: {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+                'anthropic-dangerous-direct-browser-access': 'true'
+            },
+            body: JSON.stringify({
+                model: CLAUDE_MODEL,
+                max_tokens: 300,
+                system: `Du bist ein PubMed-Suchexperte. Übersetze die deutsche medizinische Fragestellung in eine optimierte englische PubMed-Suchabfrage.
+
+Regeln:
+- Verwende englische MeSH-Terms und Fachbegriffe
+- Nutze PubMed-Syntax: AND, OR, [MeSH], [tiab]
+- Erstelle eine BREITE Suche die viele relevante Treffer liefert (Ziel: 20-50 Artikel)
+- Verwende Synonyme mit OR um mehr Treffer zu bekommen
+- KEINE Review-Filter in der Suche (wird separat gemacht)
+- Antworte NUR mit der Suchabfrage, kein anderer Text`,
+                messages: [{ role: 'user', content: rawInput }]
+            })
+        });
+
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        return data.content[0].text.trim();
+    } catch {
+        return null;
+    }
+}
+
+async function optimizeQuery(rawInput) {
+    // Versuche zuerst Claude-basierte Übersetzung
+    const claudeQuery = await optimizeQueryWithClaude(rawInput);
+    const baseQuery = claudeQuery || optimizeQueryLocal(rawInput);
+
+    // Review-Artikel bevorzugen
+    const reviewQuery = `(${baseQuery}) AND (review[pt] OR systematic review[pt] OR meta-analysis[pt])`;
+
+    return { reviewQuery, fallbackQuery: baseQuery, usedClaude: !!claudeQuery };
 }
 
 async function fetchWithTimeout(url, timeoutMs = 30000) {
@@ -558,28 +647,48 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
     }
 
     searchBtn.disabled = true;
-    setStatus('Suche in PubMed...', true);
+    setStatus('Suchanfrage wird optimiert...', true);
     outputEl.style.display = 'none';
 
     try {
-        const { reviewQuery, fallbackQuery } = optimizeQuery(rawQuery);
-        let usedQuery = reviewQuery;
+        const { reviewQuery, fallbackQuery, usedClaude } = await optimizeQuery(rawQuery);
         let isReviewSearch = true;
+        let searchStrategy = '';
 
-        // Zuerst mit Review-Filter suchen
+        // Mehrstufige Suchstrategie für maximale Trefferanzahl
+        setStatus('Suche in PubMed...', true);
+
+        // Stufe 1: Review-Artikel mit optimierter Query
         let data = await searchPubMed(reviewQuery);
         let result = data.esearchresult;
+        let ids = result.idlist;
 
-        // Fallback: Wenn weniger als 5 Review-Treffer, alle Artikel suchen
-        if (parseInt(result.count) < 5) {
+        if (ids.length >= 5) {
+            searchStrategy = 'Reviews/Meta-Analysen bevorzugt';
+        } else {
+            // Stufe 2: Alle Artikeltypen mit optimierter Query
             data = await searchPubMed(fallbackQuery);
             result = data.esearchresult;
-            usedQuery = fallbackQuery;
+            ids = result.idlist;
             isReviewSearch = false;
+            searchStrategy = 'alle Artikeltypen';
+        }
+
+        // Stufe 3: Falls Claude-Query zu wenig Treffer liefert, lokales Wörterbuch probieren
+        if (ids.length < 5 && usedClaude) {
+            const localQuery = optimizeQueryLocal(rawQuery);
+            if (localQuery !== fallbackQuery) {
+                const localData = await searchPubMed(localQuery);
+                const localResult = localData.esearchresult;
+                if (localResult.idlist.length > ids.length) {
+                    result = localResult;
+                    ids = localResult.idlist;
+                    searchStrategy = 'alle Artikeltypen, erweiterte Suche';
+                }
+            }
         }
 
         const count = parseInt(result.count);
-        const ids = result.idlist;
 
         // Keine Treffer
         if (count === 0 || ids.length === 0) {
@@ -589,7 +698,6 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
             return;
         }
 
-        const filterHint = isReviewSearch ? ' (Reviews/Meta-Analysen bevorzugt)' : ' (alle Artikeltypen)';
         setStatus(`Abstracts werden geladen (${ids.length} Artikel)...`, true);
 
         // EFetch: Abstracts und Metadaten laden
@@ -637,7 +745,7 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
         document.getElementById('sources-content').innerHTML = sourcesHtml;
 
         outputEl.style.display = 'block';
-        setStatus(`${count} Treffer, ${articles.length} Artikel analysiert${filterHint}`);
+        setStatus(`${count} Treffer, ${articles.length} Artikel analysiert (${searchStrategy})`);
         searchBtn.disabled = false;
     } catch (err) {
         setStatus('');
