@@ -107,6 +107,44 @@
         #pub-type-filters label { position: relative; }
         #pub-type-filters label:hover .filter-hint { display: block; }
 
+        /* Filter Info Toggle */
+        .filter-header {
+            display: flex; align-items: center; gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .filter-header span {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem; color: var(--text-dim);
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        #filter-info-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 18px; height: 18px; border-radius: 50%;
+            border: 1px solid var(--border); background: none;
+            color: var(--text-dim); font-size: 0.7rem; font-weight: 600;
+            font-family: 'IBM Plex Mono', monospace;
+            cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+        }
+        #filter-info-btn:hover { border-color: var(--green); color: var(--green); }
+        #filter-info-popup {
+            display: none;
+            background: var(--surface); border: 1px solid var(--border);
+            border-left: 3px solid var(--purple);
+            border-radius: 6px; padding: 1rem 1.25rem;
+            margin-bottom: 0.75rem; font-size: 0.82rem;
+            color: var(--text-dim); line-height: 1.7;
+        }
+        #filter-info-popup.visible { display: block; }
+        #filter-info-popup strong {
+            color: var(--purple); font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        #filter-info-popup ul { margin: 0.5rem 0 0 1.25rem; }
+        #filter-info-popup li { margin-bottom: 0.3rem; }
+        #filter-info-popup .ev-high { color: var(--green); }
+        #filter-info-popup .ev-mid { color: var(--text); }
+        #filter-info-popup .ev-low { color: var(--text-dim); }
+
         /* Status */
         #status { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 1.25rem; min-height: 1.4rem; font-family: 'IBM Plex Mono', monospace; }
         .error { color: var(--orange); }
@@ -241,6 +279,22 @@
         <input type="text" id="query" placeholder="Fragestellung eingeben, z.B. 'Migräne Behandlung bei Kindern'" required>
         <button type="submit" id="search-btn">Suchen</button>
     </form>
+    <div class="filter-header">
+        <span>Artikeltypen</span>
+        <button id="filter-info-btn" title="Was bedeuten diese Filter?">i</button>
+    </div>
+    <div id="filter-info-popup">
+        <strong>Evidenzhierarchie</strong>
+        <p style="margin-top:0.4rem;">Die Auswahl beeinflusst die Qualität der Ergebnisse. Höhere Evidenzstufen liefern verlässlichere Aussagen, aber weniger Treffer.</p>
+        <ul>
+            <li><span class="ev-high">Systematische Reviews</span> — Fassen alle Studien zu einem Thema zusammen. Höchste Evidenzstufe.</li>
+            <li><span class="ev-high">Meta-Analysen</span> — Vereinen Daten mehrerer Studien statistisch. Starke quantitative Aussagekraft.</li>
+            <li><span class="ev-mid">RCTs</span> — Randomisierte kontrollierte Studien. Goldstandard für Therapievergleiche.</li>
+            <li><span class="ev-low">Fallberichte</span> — Einzelfälle. Nützlich bei seltenen Erkrankungen, aber keine Verallgemeinerung möglich.</li>
+            <li><span class="ev-low">Editorials</span> — Expertenmeinungen ohne eigene Daten. Für Kontext, nicht als Evidenz.</li>
+        </ul>
+        <p style="margin-top:0.5rem;">Empfehlung: Für einen Überblick die Standardauswahl (Reviews, Meta-Analysen, RCTs) beibehalten. Nur bei seltenen Themen oder wenig Treffern Fallberichte aktivieren.</p>
+    </div>
     <div id="pub-type-filters">
         <label><input type="checkbox" data-pt="systematic[sb]" checked><span class="filter-label">Systematische Reviews</span><span class="filter-hint">Alle Studien zu einem Thema systematisch zusammengefasst (höchste Evidenz)</span></label>
         <label><input type="checkbox" data-pt="meta-analysis[pt]" checked><span class="filter-label">Meta-Analysen</span><span class="filter-hint">Studien statistisch zusammengeführt und quantitativ ausgewertet</span></label>
@@ -396,6 +450,10 @@ function getActivePubTypeFilter() {
 loadPubTypeFilters();
 document.querySelectorAll('#pub-type-filters input[type="checkbox"]').forEach(cb => {
     cb.addEventListener('change', savePubTypeFilters);
+});
+
+document.getElementById('filter-info-btn').addEventListener('click', () => {
+    document.getElementById('filter-info-popup').classList.toggle('visible');
 });
 
 // Deutsche → englische Übersetzung häufiger neurologischer/medizinischer Begriffe
