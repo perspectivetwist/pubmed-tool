@@ -131,6 +131,20 @@
         }
         button.small:hover { border-color: var(--green); color: var(--green); }
 
+        /* Loading Indicator */
+        .spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid var(--border); border-top-color: var(--green);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            vertical-align: middle; margin-right: 0.5rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        .status-loading { animation: pulse-glow 1.5s ease-in-out infinite; }
+
         /* Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: var(--base); }
@@ -177,6 +191,15 @@ const EFETCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi';
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const API_KEY_STORAGE = 'pubmed-tool-anthropic-key';
+
+function setStatus(text, loading = false) {
+    const el = document.getElementById('status');
+    if (loading) {
+        el.innerHTML = `<span class="status-loading"><span class="spinner"></span>${text}</span>`;
+    } else {
+        el.textContent = text;
+    }
+}
 
 // --- API Key Verwaltung ---
 function getApiKey() {
@@ -525,17 +548,17 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
     const rawQuery = document.getElementById('query').value.trim();
     if (!rawQuery) return;
 
-    const statusEl = document.getElementById('status');
     const outputEl = document.getElementById('output');
     const searchBtn = document.getElementById('search-btn');
 
     if (!getApiKey()) {
-        statusEl.innerHTML = '<span class="error">Bitte zuerst den Anthropic API Key eingeben (siehe oben).</span>';
+        setStatus('');
+        document.getElementById('status').innerHTML = '<span class="error">Bitte zuerst den Anthropic API Key eingeben (siehe oben).</span>';
         return;
     }
 
     searchBtn.disabled = true;
-    statusEl.textContent = 'PubMed wird durchsucht...';
+    setStatus('Suche in PubMed...', true);
     outputEl.style.display = 'none';
 
     try {
@@ -560,24 +583,26 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
 
         // Keine Treffer
         if (count === 0 || ids.length === 0) {
-            statusEl.innerHTML = '<span class="error">Keine Artikel gefunden. Bitte anderen Suchbegriff versuchen oder englische Fachbegriffe verwenden.</span>';
+            setStatus('');
+            document.getElementById('status').innerHTML = '<span class="error">Keine Artikel gefunden. Bitte anderen Suchbegriff versuchen oder englische Fachbegriffe verwenden.</span>';
             searchBtn.disabled = false;
             return;
         }
 
         const filterHint = isReviewSearch ? ' (Reviews/Meta-Analysen bevorzugt)' : ' (alle Artikeltypen)';
-        statusEl.textContent = `${ids.length} Artikel werden abgerufen...`;
+        setStatus(`Abstracts werden geladen (${ids.length} Artikel)...`, true);
 
         // EFetch: Abstracts und Metadaten laden
         const articles = await fetchArticles(ids);
 
         if (articles.length === 0) {
-            statusEl.innerHTML = '<span class="error">Artikeldaten konnten nicht geladen werden. Bitte erneut versuchen.</span>';
+            setStatus('');
+            document.getElementById('status').innerHTML = '<span class="error">Artikeldaten konnten nicht geladen werden. Bitte erneut versuchen.</span>';
             searchBtn.disabled = false;
             return;
         }
 
-        statusEl.textContent = `${articles.length} Artikel geladen. Claude analysiert die Literatur...`;
+        setStatus(`Analysiere ${articles.length} Artikel mit KI...`, true);
 
         // Claude Synthese
         const synthesis = await synthesizeWithClaude(articles, rawQuery);
@@ -612,10 +637,11 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
         document.getElementById('sources-content').innerHTML = sourcesHtml;
 
         outputEl.style.display = 'block';
-        statusEl.textContent = `${count} Treffer, ${articles.length} Artikel analysiert${filterHint}`;
+        setStatus(`${count} Treffer, ${articles.length} Artikel analysiert${filterHint}`);
         searchBtn.disabled = false;
     } catch (err) {
-        statusEl.innerHTML = `<span class="error">${err.message}</span>`;
+        setStatus('');
+        document.getElementById('status').innerHTML = `<span class="error">${err.message}</span>`;
         searchBtn.disabled = false;
     }
 });
