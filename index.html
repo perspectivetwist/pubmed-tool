@@ -153,6 +153,18 @@
     </style>
 </head>
 <body>
+    <!-- Passwort-Schutz -->
+    <div id="auth-gate" style="display:flex; align-items:center; justify-content:center; min-height:60vh;">
+        <div style="background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--green); padding:2rem; border-radius:8px; max-width:400px; width:100%;">
+            <h2 style="font-family:'IBM Plex Mono',monospace; color:var(--green); font-size:1.1rem; margin-bottom:0.5rem; text-transform:uppercase; letter-spacing:0.08em;">// Zugang</h2>
+            <p style="color:var(--text-dim); font-size:0.85rem; margin-bottom:1rem;">Dieses Tool ist passwortgeschützt.</p>
+            <input type="password" id="auth-password" placeholder="Passwort eingeben" style="width:100%; padding:0.65rem 0.85rem; font-size:0.95rem; font-family:'IBM Plex Mono',monospace; border:2px solid var(--border); border-radius:4px; background:var(--base); color:var(--text); outline:none; margin-bottom:0.75rem;">
+            <button id="auth-submit" style="width:100%; padding:0.65rem; font-size:0.9rem; font-weight:600; font-family:'IBM Plex Mono',monospace; text-transform:uppercase; letter-spacing:0.08em; color:var(--base); background:var(--green); border:none; border-radius:4px; cursor:pointer;">Entsperren</button>
+            <p id="auth-error" style="color:var(--orange); font-size:0.8rem; margin-top:0.5rem; display:none;">Falsches Passwort.</p>
+        </div>
+    </div>
+
+    <div id="app-content" style="display:none;">
     <h1>// PubMed Recherche Tool</h1>
     <p class="subtitle">Neurologische Literaturrecherche mit KI-Synthese</p>
 
@@ -184,8 +196,43 @@
             <div id="sources-content"></div>
         </div>
     </div>
+    </div><!-- /app-content -->
 
 <script>
+// --- Passwort-Schutz ---
+const AUTH_HASH = '1baccbd16cbf2b9a5c8c9b421e9a1103e6e63b7ad677c79d8b8bb2f8f10397ff';
+const AUTH_STORAGE = 'pubmed-tool-auth';
+
+async function sha256(text) {
+    const data = new TextEncoder().encode(text);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function checkAuth() {
+    return localStorage.getItem(AUTH_STORAGE) === AUTH_HASH;
+}
+
+function showApp() {
+    document.getElementById('auth-gate').style.display = 'none';
+    document.getElementById('app-content').style.display = 'block';
+}
+
+if (checkAuth()) showApp();
+
+document.getElementById('auth-submit').addEventListener('click', async () => {
+    const pw = document.getElementById('auth-password').value;
+    const hash = await sha256(pw);
+    if (hash === AUTH_HASH) {
+        localStorage.setItem(AUTH_STORAGE, hash);
+        showApp();
+    } else {
+        document.getElementById('auth-error').style.display = 'block';
+    }
+});
+document.getElementById('auth-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('auth-submit').click();
+});
 const ESEARCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const EFETCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi';
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
