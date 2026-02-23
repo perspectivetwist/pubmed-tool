@@ -771,6 +771,8 @@ async function optimizeQuery(rawInput) {
     let meshResult;
     try {
         meshResult = await resolveMeSHTerms(baseQuery);
+        // Pause nach MeSH-Lookups, damit PubMed Rate-Limit sich erholt
+        await new Promise(r => setTimeout(r, 500));
     } catch {
         meshResult = { optimizedQuery: baseQuery, displayTerms: [] };
     }
