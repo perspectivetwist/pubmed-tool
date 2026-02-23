@@ -34,3 +34,11 @@ Freitext-Eingabe → PubMed sucht → Claude fasst zusammen → Ergebnis lesbar.
 - Tasks sequentiell: 1.1 → 1.2 → 2.1 → 2.2 → 2.3 → 2.4 → 3.1 → 3.2 → 3.3 → 3.4 → 4.1 → 4.2 → 4.3 → 5.1 → 5.2 → 5.3
 - Nach jedem Task: Status in Notion → "Done", Lessons Learned eintragen
 - Nur fragen wenn wirklich blockiert (z.B. API Key fehlt)
+
+## Workflows
+Bei folgenden Situationen die entsprechende Datei in .claude/workflows/ lesen und anwenden:
+- Nach jedem gelösten Problem oder Task → workflow-compound.md
+- Code Review nötig → workflow-review.md
+- Neues Feature planen → workflow-plan.md
+- Idee erkunden → brainstorm-workflow.md
+- Implementation starten → workflow-work.md
