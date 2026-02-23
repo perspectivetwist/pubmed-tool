@@ -629,6 +629,15 @@ async function lookupMeSH(term) {
         const meshName = docsum?.ds_meshterms?.[0] || docsum?.title || null;
 
         if (meshName) {
+            // Validierung: MeSH-Term muss mindestens ein signifikantes Wort (>3 Zeichen)
+            // mit dem Suchbegriff teilen, sonst ist es ein falscher Match
+            // (z.B. "beta-Synuclein" für "alpha-synuclein" oder "Junctional Adhesion Molecule C" für "antibodies")
+            const inputWords = term.toLowerCase().split(/[\s\-,]+/).filter(w => w.length > 3);
+            const meshWords = meshName.toLowerCase().split(/[\s\-,]+/).filter(w => w.length > 3);
+            const hasOverlap = inputWords.some(w => meshWords.some(m => m.includes(w) || w.includes(m)));
+            if (!hasOverlap) {
+                return { meshTerm: term, uid, found: false };
+            }
             return { meshTerm: meshName, uid, found: true };
         }
         return { meshTerm: term, uid, found: false };
@@ -682,13 +691,18 @@ async function resolveMeSHTerms(queryString) {
 
     const meshParts = [];
     const displayTerms = [];
+    const seenMesh = new Set(); // Duplikate in der Ausgabe vermeiden
 
     for (let i = 0; i < terms.length; i++) {
         const result = results[i];
         if (result.status === 'fulfilled' && result.value.found) {
             const { meshTerm } = result.value;
-            meshParts.push(`"${meshTerm}"[MeSH]`);
-            displayTerms.push({ term: meshTerm, found: true });
+            const meshKey = meshTerm.toLowerCase();
+            if (!seenMesh.has(meshKey)) {
+                seenMesh.add(meshKey);
+                meshParts.push(`"${meshTerm}"[MeSH]`);
+                displayTerms.push({ term: meshTerm, found: true });
+            }
         } else {
             meshParts.push(`${terms[i]}[tiab]`);
             displayTerms.push({ term: terms[i], found: false });
@@ -795,7 +809,7 @@ async function optimizeQuery(rawInput) {
     return { filteredQuery, fallbackQuery: effectiveQuery, baseQuery, usedClaude: !!claudeQuery, hasFilter: !!pubTypeFilter };
 }
 
-async function fetchWithTimeout(url, timeoutMs = 30000, retries = 1) {
+async function fetchWithTimeout(url, timeoutMs = 30000, retries = 2) {
     for (let attempt = 0; attempt <= retries; attempt++) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -811,9 +825,10 @@ async function fetchWithTimeout(url, timeoutMs = 30000, retries = 1) {
             if (!navigator.onLine) {
                 throw new Error('Keine Internetverbindung. Bitte Verbindung prüfen und erneut versuchen.');
             }
-            // Bei Netzwerkfehler (z.B. Rate-Limiting ohne CORS-Header): Retry nach 2s
+            // Bei Netzwerkfehler (z.B. Rate-Limiting ohne CORS-Header): Retry mit Backoff
             if (attempt < retries) {
-                await new Promise(r => setTimeout(r, 2000));
+                const backoff = (attempt + 1) * 2000; // 2s, 4s
+                await new Promise(r => setTimeout(r, backoff));
                 continue;
             }
             throw new Error('Netzwerkfehler: PubMed ist nicht erreichbar. Bitte später erneut versuchen.');
