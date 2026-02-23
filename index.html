@@ -38,6 +38,8 @@
 <script>
 const ESEARCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const EFETCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi';
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const API_KEY_STORAGE = 'pubmed-tool-anthropic-key';
 
 // --- API Key Verwaltung ---
@@ -274,6 +276,67 @@ async function fetchArticles(pmids) {
     return articles;
 }
 
+async function synthesizeWithClaude(articles, userQuery) {
+    const apiKey = getApiKey();
+    if (!apiKey) throw new Error('Bitte zuerst den Anthropic API Key eingeben.');
+
+    // Abstracts als nummerierte Liste für Claude aufbereiten
+    const abstractsText = articles.map((a, i) =>
+        `[${i + 1}] ${a.authors[0] || 'Unbekannt'} (${a.year || 'o.J.'}): ${a.title}\nJournal: ${a.journal}\nAbstract: ${a.abstract}`
+    ).join('\n\n---\n\n');
+
+    const systemPrompt = `Du bist ein medizinischer Literaturanalyst, spezialisiert auf Neurologie.
+Du erstellst wissenschaftliche Literatursynthesen auf Deutsch für einen Facharzt für Neurologie.
+
+Regeln:
+- Schreibe IMMER auf Deutsch
+- Verwende Quellenverweise im Format [Erstautor Jahr], z.B. [Müller 2023]
+- Beziehe dich nur auf die bereitgestellten Abstracts
+- Sei präzise und evidenzbasiert
+- Nenne konkrete Zahlen, Dosierungen und Effektstärken wenn verfügbar`;
+
+    const userMessage = `Fragestellung: "${userQuery}"
+
+Hier sind ${articles.length} relevante Abstracts aus PubMed:
+
+${abstractsText}
+
+Erstelle bitte folgende zwei Sektionen:
+
+## Literatursynthese
+Fasse die wichtigsten Erkenntnisse in 3–5 Absätzen zusammen. Verwende Quellenverweise [Erstautor Jahr].
+
+## Offene Fragen & Kontroversen
+Liste die wichtigsten offenen Forschungsfragen und kontroversen Punkte auf, die sich aus der Literatur ergeben.`;
+
+    const response = await fetch(CLAUDE_API_URL, {
+        method: 'POST',
+        headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+            'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+            model: CLAUDE_MODEL,
+            max_tokens: 4096,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userMessage }]
+        })
+    });
+
+    if (response.status === 401) throw new Error('Ungültiger API Key. Bitte prüfe deinen Anthropic API Key.');
+    if (response.status === 429) throw new Error('API-Limit erreicht. Bitte einige Sekunden warten und erneut versuchen.');
+    if (response.status >= 500) throw new Error('Claude API vorübergehend nicht verfügbar. Bitte später erneut versuchen.');
+    if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(`Claude API Fehler: ${errData.error?.message || response.status}`);
+    }
+
+    const data = await response.json();
+    return data.content[0].text;
+}
+
 document.getElementById('search-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const rawQuery = document.getElementById('query').value.trim();
@@ -281,6 +344,11 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
 
     const statusEl = document.getElementById('status');
     const resultsEl = document.getElementById('results');
+
+    if (!getApiKey()) {
+        statusEl.textContent = 'Bitte zuerst den Anthropic API Key eingeben (siehe oben).';
+        return;
+    }
 
     statusEl.textContent = 'Suche läuft...';
     resultsEl.style.display = 'none';
@@ -324,16 +392,26 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
             return;
         }
 
-        statusEl.textContent = `${count} Treffer, ${articles.length} Artikel geladen${filterHint}`;
-        resultsEl.textContent = JSON.stringify(articles.map(a => ({
-            pmid: a.pmid,
-            title: a.title,
-            authors: a.authors.join(', '),
-            journal: a.journal,
-            year: a.year,
-            abstract: a.abstract.substring(0, 200) + '...'
-        })), null, 2);
+        statusEl.textContent = `${articles.length} Artikel geladen. Claude analysiert...`;
+
+        // Claude Synthese
+        const synthesis = await synthesizeWithClaude(articles, rawQuery);
+
+        statusEl.textContent = `${count} Treffer, ${articles.length} Artikel analysiert${filterHint}`;
+        resultsEl.innerHTML = '';
         resultsEl.style.display = 'block';
+
+        // Synthese als formatiertes HTML rendern (Markdown-artig)
+        const synthesisHtml = synthesis
+            .replace(/## (.*)/g, '<h2>$1</h2>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n\n/g, '</p><p>')
+            .replace(/\n- /g, '</p><li>')
+            .replace(/\n/g, '<br>');
+        resultsEl.innerHTML = `<div style="white-space:normal;">${synthesisHtml}</div>`;
+
+        // Artikel-Daten für spätere Tasks (Quellenliste) im DOM speichern
+        window._lastArticles = articles;
     } catch (err) {
         statusEl.textContent = err.message;
         resultsEl.style.display = 'none';
