@@ -276,12 +276,30 @@ async function fetchArticles(pmids) {
     return articles;
 }
 
+// Grobe Token-Schätzung (~4 Zeichen pro Token)
+function estimateTokens(text) {
+    return Math.ceil(text.length / 4);
+}
+
+const TOKEN_LIMIT = 150000; // Sicherheitspuffer unter Claudes 200k Limit
+const FALLBACK_ARTICLE_COUNT = 30;
+
 async function synthesizeWithClaude(articles, userQuery) {
     const apiKey = getApiKey();
     if (!apiKey) throw new Error('Bitte zuerst den Anthropic API Key eingeben.');
 
+    // Token-Limit prüfen: bei Überschreitung auf Top-30 reduzieren
+    let usedArticles = articles;
+    let truncated = false;
+
+    const fullText = articles.map(a => a.abstract).join(' ');
+    if (estimateTokens(fullText) > TOKEN_LIMIT) {
+        usedArticles = articles.slice(0, FALLBACK_ARTICLE_COUNT);
+        truncated = true;
+    }
+
     // Abstracts als nummerierte Liste für Claude aufbereiten
-    const abstractsText = articles.map((a, i) =>
+    const abstractsText = usedArticles.map((a, i) =>
         `[${i + 1}] ${a.authors[0] || 'Unbekannt'} (${a.year || 'o.J.'}): ${a.title}\nJournal: ${a.journal}\nAbstract: ${a.abstract}`
     ).join('\n\n---\n\n');
 
@@ -318,21 +336,38 @@ Jede wesentliche Aussage muss mit [Erstautor Jahr] belegt werden.
 ## Offene Fragen & Kontroversen
 Nenne 3–6 konkrete offene Forschungsfragen oder kontroverse Punkte, die sich direkt aus den analysierten Abstracts ergeben. Formuliere als vollständige Sätze, nicht als Stichpunkte.`;
 
-    const response = await fetch(CLAUDE_API_URL, {
-        method: 'POST',
-        headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-            'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-            model: CLAUDE_MODEL,
-            max_tokens: 4096,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: userMessage }]
-        })
-    });
+    async function callClaude(sysPrompt, usrMessage) {
+        const resp = await fetch(CLAUDE_API_URL, {
+            method: 'POST',
+            headers: {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+                'anthropic-dangerous-direct-browser-access': 'true'
+            },
+            body: JSON.stringify({
+                model: CLAUDE_MODEL,
+                max_tokens: 4096,
+                system: sysPrompt,
+                messages: [{ role: 'user', content: usrMessage }]
+            })
+        });
+        return resp;
+    }
+
+    let response = await callClaude(systemPrompt, userMessage);
+
+    // Bei 400 (z.B. Token-Limit): Fallback auf Top-30 Abstracts und Retry
+    if (response.status === 400 && !truncated && articles.length > FALLBACK_ARTICLE_COUNT) {
+        usedArticles = articles.slice(0, FALLBACK_ARTICLE_COUNT);
+        truncated = true;
+        const fallbackAbstracts = usedArticles.map((a, i) =>
+            `[${i + 1}] ${a.authors[0] || 'Unbekannt'} (${a.year || 'o.J.'}): ${a.title}\nJournal: ${a.journal}\nAbstract: ${a.abstract}`
+        ).join('\n\n---\n\n');
+        const fallbackMessage = userMessage.replace(abstractsText, fallbackAbstracts)
+            .replace(`${articles.length} relevante`, `${usedArticles.length} relevante`);
+        response = await callClaude(systemPrompt, fallbackMessage);
+    }
 
     if (response.status === 401) throw new Error('Ungültiger API Key. Bitte prüfe deinen Anthropic API Key.');
     if (response.status === 429) throw new Error('API-Limit erreicht. Bitte einige Sekunden warten und erneut versuchen.');
@@ -343,7 +378,10 @@ Nenne 3–6 konkrete offene Forschungsfragen oder kontroverse Punkte, die sich d
     }
 
     const data = await response.json();
-    return data.content[0].text;
+    const resultText = data.content[0].text;
+    return truncated
+        ? resultText + `\n\n*Hinweis: Die Analyse wurde auf die ${usedArticles.length} relevantesten Artikel beschränkt (von ${articles.length} gefundenen).*`
+        : resultText;
 }
 
 document.getElementById('search-form').addEventListener('submit', async (e) => {
