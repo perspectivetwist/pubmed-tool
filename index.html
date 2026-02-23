@@ -4,9 +4,70 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PubMed Recherche Tool</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        #search-form { display: flex; gap: 0.5rem; margin: 1rem 0; }
+        #query { flex: 1; padding: 0.5rem; font-size: 1rem; }
+        button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+        #status { color: #666; margin: 0.5rem 0; }
+        #results { white-space: pre-wrap; background: #f5f5f5; padding: 1rem; border-radius: 4px; display: none; }
+    </style>
 </head>
 <body>
     <h1>PubMed Recherche Tool</h1>
-    <p>Literaturrecherche für Neurologen — in Entwicklung.</p>
+
+    <form id="search-form">
+        <input type="text" id="query" placeholder="Suchbegriff eingeben, z.B. 'migraine treatment'" required>
+        <button type="submit">Suchen</button>
+    </form>
+    <div id="status"></div>
+    <div id="results"></div>
+
+<script>
+const ESEARCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
+
+async function searchPubMed(query) {
+    const params = new URLSearchParams({
+        db: 'pubmed',
+        term: query,
+        retmax: '50',
+        mindate: '2000',
+        maxdate: '2099',
+        datetype: 'pdat',
+        retmode: 'json',
+        sort: 'relevance'
+    });
+
+    const response = await fetch(`${ESEARCH_URL}?${params}`);
+    if (!response.ok) throw new Error(`PubMed API Fehler: ${response.status}`);
+    return response.json();
+}
+
+document.getElementById('search-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const query = document.getElementById('query').value.trim();
+    if (!query) return;
+
+    const statusEl = document.getElementById('status');
+    const resultsEl = document.getElementById('results');
+
+    statusEl.textContent = 'Suche läuft...';
+    resultsEl.style.display = 'none';
+
+    try {
+        const data = await searchPubMed(query);
+        const result = data.esearchresult;
+        const count = result.count;
+        const ids = result.idlist;
+
+        statusEl.textContent = `${count} Treffer gefunden, ${ids.length} PMIDs abgerufen (ab Jahr 2000)`;
+        resultsEl.textContent = JSON.stringify({ count, idlist: ids }, null, 2);
+        resultsEl.style.display = 'block';
+    } catch (err) {
+        statusEl.textContent = `Fehler: ${err.message}`;
+        resultsEl.style.display = 'none';
+    }
+});
+</script>
 </body>
 </html>
