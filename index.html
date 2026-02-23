@@ -25,6 +25,7 @@
 
 <script>
 const ESEARCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
+const EFETCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi';
 
 // Deutsche → englische Übersetzung häufiger neurologischer/medizinischer Begriffe
 const MEDICAL_TERMS_DE_EN = {
@@ -141,6 +142,59 @@ async function searchPubMed(term) {
     return response.json();
 }
 
+async function fetchArticles(pmids) {
+    if (pmids.length === 0) return [];
+
+    const params = new URLSearchParams({
+        db: 'pubmed',
+        id: pmids.join(','),
+        retmode: 'xml'
+    });
+
+    const response = await fetch(`${EFETCH_URL}?${params}`);
+    if (!response.ok) throw new Error(`PubMed EFetch Fehler: ${response.status}`);
+
+    const xmlText = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlText, 'text/xml');
+
+    const articles = [];
+    for (const article of doc.querySelectorAll('PubmedArticle')) {
+        const pmid = article.querySelector('PMID')?.textContent || '';
+
+        const title = article.querySelector('ArticleTitle')?.textContent || 'Kein Titel';
+
+        // Autoren: LastName + Initials
+        const authors = [];
+        for (const author of article.querySelectorAll('Author')) {
+            const lastName = author.querySelector('LastName')?.textContent;
+            const initials = author.querySelector('Initials')?.textContent;
+            if (lastName) authors.push(initials ? `${lastName} ${initials}` : lastName);
+        }
+
+        // Journal
+        const journal = article.querySelector('Journal ISOAbbreviation')?.textContent
+            || article.querySelector('Journal Title')?.textContent || '';
+
+        // Jahr: aus PubDate oder ArticleDate
+        const year = article.querySelector('PubDate Year')?.textContent
+            || article.querySelector('ArticleDate Year')?.textContent || '';
+
+        // Abstract: kann aus mehreren AbstractText-Elementen bestehen
+        const abstractParts = [];
+        for (const part of article.querySelectorAll('AbstractText')) {
+            const label = part.getAttribute('Label');
+            const text = part.textContent;
+            abstractParts.push(label ? `${label}: ${text}` : text);
+        }
+        const abstract = abstractParts.join('\n') || 'Kein Abstract verfügbar.';
+
+        articles.push({ pmid, title, authors, journal, year, abstract });
+    }
+
+    return articles;
+}
+
 document.getElementById('search-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const rawQuery = document.getElementById('query').value.trim();
@@ -173,13 +227,20 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
         const ids = result.idlist;
         const filterHint = isReviewSearch ? ' (Reviews/Meta-Analysen bevorzugt)' : ' (alle Artikeltypen)';
 
-        statusEl.textContent = `${count} Treffer gefunden, ${ids.length} PMIDs abgerufen${filterHint}`;
-        resultsEl.textContent = JSON.stringify({
-            originalQuery: rawQuery,
-            optimizedQuery: usedQuery,
-            count,
-            idlist: ids
-        }, null, 2);
+        statusEl.textContent = `${ids.length} Artikel werden abgerufen...`;
+
+        // EFetch: Abstracts und Metadaten laden
+        const articles = await fetchArticles(ids);
+
+        statusEl.textContent = `${count} Treffer, ${articles.length} Artikel geladen${filterHint}`;
+        resultsEl.textContent = JSON.stringify(articles.map(a => ({
+            pmid: a.pmid,
+            title: a.title,
+            authors: a.authors.join(', '),
+            journal: a.journal,
+            year: a.year,
+            abstract: a.abstract.substring(0, 200) + '...'
+        })), null, 2);
         resultsEl.style.display = 'block';
     } catch (err) {
         statusEl.textContent = `Fehler: ${err.message}`;
