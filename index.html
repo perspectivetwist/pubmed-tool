@@ -285,29 +285,38 @@ async function synthesizeWithClaude(articles, userQuery) {
         `[${i + 1}] ${a.authors[0] || 'Unbekannt'} (${a.year || 'o.J.'}): ${a.title}\nJournal: ${a.journal}\nAbstract: ${a.abstract}`
     ).join('\n\n---\n\n');
 
-    const systemPrompt = `Du bist ein medizinischer Literaturanalyst, spezialisiert auf Neurologie.
-Du erstellst wissenschaftliche Literatursynthesen auf Deutsch für einen Facharzt für Neurologie.
+    const systemPrompt = `Du bist ein akademischer Literaturanalyst mit Spezialisierung auf Neurologie und Neurowissenschaften. Du schreibst für einen Facharzt für Neurologie.
 
-Regeln:
-- Schreibe IMMER auf Deutsch
-- Verwende Quellenverweise im Format [Erstautor Jahr], z.B. [Müller 2023]
-- Beziehe dich nur auf die bereitgestellten Abstracts
-- Sei präzise und evidenzbasiert
-- Nenne konkrete Zahlen, Dosierungen und Effektstärken wenn verfügbar`;
+Dein Output hat die Qualität einer wissenschaftlichen Einleitung (Introduction) eines Fachartikels.
+
+Strikte Regeln:
+- Sprache: IMMER Deutsch, aber Fachbegriffe dürfen in Klammern auf Englisch ergänzt werden
+- Quellenverweise: Immer im Format [Erstautor Jahr], z.B. [Schmidt 2022]. Jede wesentliche Aussage muss belegt sein
+- Evidenzbasis: Beziehe dich AUSSCHLIESSLICH auf die bereitgestellten Abstracts. Erfinde keine Quellen
+- Präzision: Nenne konkrete Zahlen (Effektstärken, NNT, Odds Ratios, Konfidenzintervalle, p-Werte, Dosierungen) wenn in den Abstracts vorhanden
+- Struktur: Ordne thematisch, nicht chronologisch. Fasse verwandte Ergebnisse zusammen statt Studie für Studie aufzulisten
+- Stil: Sachlich-wissenschaftlich, keine Übertreibungen, keine Werturteile ohne Evidenz
+- Widersprüche: Wenn Studien sich widersprechen, stelle beide Positionen dar mit jeweiligen Belegen
+- Limitationen: Erwähne methodische Einschränkungen (kleine Fallzahlen, retrospektives Design etc.) wo relevant`;
 
     const userMessage = `Fragestellung: "${userQuery}"
 
-Hier sind ${articles.length} relevante Abstracts aus PubMed:
+Hier sind ${articles.length} relevante PubMed-Abstracts:
 
 ${abstractsText}
 
-Erstelle bitte folgende zwei Sektionen:
+Erstelle folgende zwei Sektionen:
 
 ## Literatursynthese
-Fasse die wichtigsten Erkenntnisse in 3–5 Absätzen zusammen. Verwende Quellenverweise [Erstautor Jahr].
+Verfasse 3–5 Absätze, die den aktuellen Forschungsstand zur Fragestellung zusammenfassen. Struktur:
+- Absatz 1: Überblick und Epidemiologie/Hintergrund
+- Absatz 2–3: Zentrale Ergebnisse und Evidenz (mit konkreten Zahlen)
+- Absatz 4: Aktuelle Therapieansätze oder diagnostische Strategien (falls relevant)
+- Absatz 5: Zusammenfassende Bewertung der Evidenzlage
+Jede wesentliche Aussage muss mit [Erstautor Jahr] belegt werden.
 
 ## Offene Fragen & Kontroversen
-Liste die wichtigsten offenen Forschungsfragen und kontroversen Punkte auf, die sich aus der Literatur ergeben.`;
+Nenne 3–6 konkrete offene Forschungsfragen oder kontroverse Punkte, die sich direkt aus den analysierten Abstracts ergeben. Formuliere als vollständige Sätze, nicht als Stichpunkte.`;
 
     const response = await fetch(CLAUDE_API_URL, {
         method: 'POST',
