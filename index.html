@@ -653,7 +653,8 @@ async function resolveMeSHTerms(queryString) {
 
     if (allTerms.length === 0) return { optimizedQuery: queryString, displayTerms: [] };
 
-    // Deduplizieren (case-insensitive) und auf max 5 Terms limitieren
+    // Deduplizieren (case-insensitive) und auf max 3 Terms limitieren
+    // (Jeder Lookup = 2 PubMed-Requests; bei mehr Terms wird Rate-Limit überschritten)
     const seen = new Set();
     const terms = [];
     for (const t of allTerms) {
@@ -662,7 +663,7 @@ async function resolveMeSHTerms(queryString) {
             seen.add(key);
             terms.push(t);
         }
-        if (terms.length >= 5) break;
+        if (terms.length >= 3) break;
     }
 
     // Sequentiell verarbeiten mit 400ms Pause zwischen jedem Lookup
@@ -794,22 +795,29 @@ async function optimizeQuery(rawInput) {
     return { filteredQuery, fallbackQuery: effectiveQuery, baseQuery, usedClaude: !!claudeQuery, hasFilter: !!pubTypeFilter };
 }
 
-async function fetchWithTimeout(url, timeoutMs = 30000) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        const response = await fetch(url, { signal: controller.signal });
-        return response;
-    } catch (err) {
-        if (err.name === 'AbortError') {
-            throw new Error('Zeitüberschreitung: PubMed antwortet nicht. Bitte später erneut versuchen.');
+async function fetchWithTimeout(url, timeoutMs = 30000, retries = 1) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
+            return response;
+        } catch (err) {
+            clearTimeout(timeout);
+            if (err.name === 'AbortError') {
+                throw new Error('Zeitüberschreitung: PubMed antwortet nicht. Bitte später erneut versuchen.');
+            }
+            if (!navigator.onLine) {
+                throw new Error('Keine Internetverbindung. Bitte Verbindung prüfen und erneut versuchen.');
+            }
+            // Bei Netzwerkfehler (z.B. Rate-Limiting ohne CORS-Header): Retry nach 2s
+            if (attempt < retries) {
+                await new Promise(r => setTimeout(r, 2000));
+                continue;
+            }
+            throw new Error('Netzwerkfehler: PubMed ist nicht erreichbar. Bitte später erneut versuchen.');
         }
-        if (!navigator.onLine) {
-            throw new Error('Keine Internetverbindung. Bitte Verbindung prüfen und erneut versuchen.');
-        }
-        throw new Error('Netzwerkfehler: PubMed ist nicht erreichbar. Bitte später erneut versuchen.');
-    } finally {
-        clearTimeout(timeout);
     }
 }
 
