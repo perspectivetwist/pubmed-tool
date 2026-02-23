@@ -26,10 +26,108 @@
 <script>
 const ESEARCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 
-async function searchPubMed(query) {
+// Deutsche → englische Übersetzung häufiger neurologischer/medizinischer Begriffe
+const MEDICAL_TERMS_DE_EN = {
+    'schlaganfall': 'stroke',
+    'hirnschlag': 'stroke',
+    'migräne': 'migraine',
+    'kopfschmerz': 'headache',
+    'kopfschmerzen': 'headache',
+    'epilepsie': 'epilepsy',
+    'anfälle': 'seizures',
+    'krampfanfall': 'seizure',
+    'krampfanfälle': 'seizures',
+    'demenz': 'dementia',
+    'alzheimer': 'alzheimer',
+    'parkinson': 'parkinson',
+    'multiple sklerose': 'multiple sclerosis',
+    'nervenschmerzen': 'neuropathic pain',
+    'neuropathie': 'neuropathy',
+    'polyneuropathie': 'polyneuropathy',
+    'gehirntumor': 'brain tumor',
+    'hirntumor': 'brain tumor',
+    'hirnblutung': 'cerebral hemorrhage',
+    'gehirnerschütterung': 'concussion',
+    'schwindel': 'vertigo',
+    'tremor': 'tremor',
+    'lähmung': 'paralysis',
+    'spastik': 'spasticity',
+    'meningitis': 'meningitis',
+    'enzephalitis': 'encephalitis',
+    'behandlung': 'treatment',
+    'therapie': 'therapy',
+    'diagnose': 'diagnosis',
+    'diagnostik': 'diagnostics',
+    'prognose': 'prognosis',
+    'ursachen': 'etiology',
+    'symptome': 'symptoms',
+    'risikofaktoren': 'risk factors',
+    'prävention': 'prevention',
+    'rehabilitation': 'rehabilitation',
+    'kinder': 'pediatric',
+    'erwachsene': 'adults',
+    'ältere': 'elderly',
+    'leitlinie': 'guideline',
+    'leitlinien': 'guidelines',
+    'rückenschmerzen': 'back pain',
+    'bandscheibenvorfall': 'disc herniation',
+    'restless legs': 'restless legs syndrome',
+    'schlafstörungen': 'sleep disorders',
+    'tinnitus': 'tinnitus',
+    'gleichgewichtsstörung': 'balance disorder',
+    'muskelerkrankung': 'myopathy',
+    'nervenentzündung': 'neuritis',
+    'trigeminusneuralgie': 'trigeminal neuralgia',
+    'cluster-kopfschmerz': 'cluster headache',
+    'spannungskopfschmerz': 'tension headache',
+    'schädelhirntrauma': 'traumatic brain injury',
+    'bewusstlosigkeit': 'syncope',
+    'ohnmacht': 'syncope',
+    'gedächtnisstörung': 'memory disorder',
+    'aphasie': 'aphasia',
+    'ataxie': 'ataxia',
+    'dystonie': 'dystonia',
+    'myasthenie': 'myasthenia',
+    'guillain-barré': 'guillain-barre',
+    'als': 'amyotrophic lateral sclerosis',
+    'amyotrophe lateralsklerose': 'amyotrophic lateral sclerosis',
+    'neurodegeneration': 'neurodegeneration',
+    'und': 'AND',
+    'oder': 'OR',
+    'bei': '',
+    'mit': '',
+    'durch': '',
+    'nach': 'after',
+    'vor': 'before',
+    'neue': 'new',
+    'aktuelle': 'current',
+};
+
+function optimizeQuery(rawInput) {
+    let query = rawInput.trim().toLowerCase();
+
+    // Ersetze deutsche Mehrwort-Terme zuerst (längste zuerst)
+    const sortedTerms = Object.entries(MEDICAL_TERMS_DE_EN)
+        .sort((a, b) => b[0].length - a[0].length);
+
+    for (const [de, en] of sortedTerms) {
+        const regex = new RegExp(`\\b${de.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi');
+        query = query.replace(regex, en);
+    }
+
+    // Leere Ersetzungen und Mehrfach-Leerzeichen bereinigen
+    query = query.replace(/\s+/g, ' ').trim();
+
+    // Review-Artikel bevorzugen: Suche zuerst mit Review-Filter
+    const reviewQuery = `(${query}) AND (review[pt] OR systematic review[pt] OR meta-analysis[pt])`;
+
+    return { reviewQuery, fallbackQuery: query };
+}
+
+async function searchPubMed(term) {
     const params = new URLSearchParams({
         db: 'pubmed',
-        term: query,
+        term,
         retmax: '50',
         mindate: '2000',
         maxdate: '2099',
@@ -45,8 +143,8 @@ async function searchPubMed(query) {
 
 document.getElementById('search-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const query = document.getElementById('query').value.trim();
-    if (!query) return;
+    const rawQuery = document.getElementById('query').value.trim();
+    if (!rawQuery) return;
 
     const statusEl = document.getElementById('status');
     const resultsEl = document.getElementById('results');
@@ -55,13 +153,33 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
     resultsEl.style.display = 'none';
 
     try {
-        const data = await searchPubMed(query);
-        const result = data.esearchresult;
+        const { reviewQuery, fallbackQuery } = optimizeQuery(rawQuery);
+        let usedQuery = reviewQuery;
+        let isReviewSearch = true;
+
+        // Zuerst mit Review-Filter suchen
+        let data = await searchPubMed(reviewQuery);
+        let result = data.esearchresult;
+
+        // Fallback: Wenn weniger als 5 Review-Treffer, alle Artikel suchen
+        if (parseInt(result.count) < 5) {
+            data = await searchPubMed(fallbackQuery);
+            result = data.esearchresult;
+            usedQuery = fallbackQuery;
+            isReviewSearch = false;
+        }
+
         const count = result.count;
         const ids = result.idlist;
+        const filterHint = isReviewSearch ? ' (Reviews/Meta-Analysen bevorzugt)' : ' (alle Artikeltypen)';
 
-        statusEl.textContent = `${count} Treffer gefunden, ${ids.length} PMIDs abgerufen (ab Jahr 2000)`;
-        resultsEl.textContent = JSON.stringify({ count, idlist: ids }, null, 2);
+        statusEl.textContent = `${count} Treffer gefunden, ${ids.length} PMIDs abgerufen${filterHint}`;
+        resultsEl.textContent = JSON.stringify({
+            originalQuery: rawQuery,
+            optimizedQuery: usedQuery,
+            count,
+            idlist: ids
+        }, null, 2);
         resultsEl.style.display = 'block';
     } catch (err) {
         statusEl.textContent = `Fehler: ${err.message}`;
