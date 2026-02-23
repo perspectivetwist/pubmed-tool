@@ -11,10 +11,22 @@
         button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
         #status { color: #666; margin: 0.5rem 0; }
         #results { white-space: pre-wrap; background: #f5f5f5; padding: 1rem; border-radius: 4px; display: none; }
+        #api-key-setup { background: #fff3cd; border: 1px solid #ffc107; padding: 1rem; border-radius: 4px; margin: 1rem 0; }
+        #api-key-setup input { width: 100%; padding: 0.5rem; font-size: 1rem; margin: 0.5rem 0; box-sizing: border-box; }
+        #api-key-status { font-size: 0.85rem; color: #666; margin: 0.5rem 0; }
+        #api-key-status button { font-size: 0.85rem; padding: 0.2rem 0.5rem; margin-left: 0.5rem; }
     </style>
 </head>
 <body>
     <h1>PubMed Recherche Tool</h1>
+
+    <div id="api-key-setup" style="display:none;">
+        <strong>Claude API Key benötigt</strong>
+        <p>Für die Analyse der Literatur wird ein Anthropic API Key benötigt. Der Key wird nur lokal in deinem Browser gespeichert und nie übertragen.</p>
+        <input type="password" id="api-key-input" placeholder="sk-ant-... (Anthropic API Key)">
+        <button id="api-key-save">Speichern</button>
+    </div>
+    <div id="api-key-status"></div>
 
     <form id="search-form">
         <input type="text" id="query" placeholder="Suchbegriff eingeben, z.B. 'migraine treatment'" required>
@@ -26,6 +38,50 @@
 <script>
 const ESEARCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const EFETCH_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi';
+const API_KEY_STORAGE = 'pubmed-tool-anthropic-key';
+
+// --- API Key Verwaltung ---
+function getApiKey() {
+    return localStorage.getItem(API_KEY_STORAGE) || '';
+}
+
+function saveApiKey(key) {
+    localStorage.setItem(API_KEY_STORAGE, key);
+}
+
+function updateApiKeyUI() {
+    const setupEl = document.getElementById('api-key-setup');
+    const statusEl = document.getElementById('api-key-status');
+    const key = getApiKey();
+
+    if (key) {
+        setupEl.style.display = 'none';
+        const masked = key.substring(0, 10) + '...' + key.substring(key.length - 4);
+        statusEl.innerHTML = `API Key gespeichert (${masked}) <button id="api-key-change">Ändern</button>`;
+        document.getElementById('api-key-change').addEventListener('click', () => {
+            setupEl.style.display = 'block';
+            document.getElementById('api-key-input').value = '';
+            document.getElementById('api-key-input').focus();
+        });
+    } else {
+        setupEl.style.display = 'block';
+        statusEl.textContent = '';
+    }
+}
+
+document.getElementById('api-key-save').addEventListener('click', () => {
+    const input = document.getElementById('api-key-input');
+    const key = input.value.trim();
+    if (!key) return;
+    if (!key.startsWith('sk-ant-')) {
+        alert('Der API Key sollte mit "sk-ant-" beginnen. Bitte prüfe den Key.');
+        return;
+    }
+    saveApiKey(key);
+    updateApiKeyUI();
+});
+
+updateApiKeyUI();
 
 // Deutsche → englische Übersetzung häufiger neurologischer/medizinischer Begriffe
 const MEDICAL_TERMS_DE_EN = {
