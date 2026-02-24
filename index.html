@@ -963,7 +963,7 @@ Dein Output hat DREI Teile: Quick-Pitch, Literatursynthese und Offene Fragen.
 
 ## Quick-Pitch (ERSTER Teil deiner Antwort)
 Der Quick-Pitch ist eine mündlich verwendbare Zusammenfassung des Forschungsstands. Tonfall: Erfahrener Facharzt/Oberarzt im kollegialen Gespräch — selbstbewusst, direkt, auf Augenhöhe. KEIN Akademiker-Deutsch, sondern Flur-/Meetingsprache, wie man es einem geschätzten Kollegen beim Kaffee erzählen würde. Länge dynamisch je nach Themenkomplexität (2–5 Absätze). Quellenverweise [Erstautor Jahr] auch hier verwenden.
-Danach ein Unterabschnitt "Was könnte ein Kollege einwenden?" mit 1–3 typischen Gegenargumenten aus dem klinischen Alltag und direkten Konter-Antworten im gleichen Ton.
+Danach ein Unterabschnitt "Einwandbehandlung" mit 1–3 typischen Gegenargumenten aus dem klinischen Alltag und direkten Konter-Antworten im gleichen Ton.
 
 ## Literatursynthese und Offene Fragen
 Die Qualität einer wissenschaftlichen Einleitung (Introduction) eines Fachartikels.
@@ -989,7 +989,7 @@ Erstelle folgende drei Sektionen IN DIESER REIHENFOLGE:
 ## Quick-Pitch
 Fasse den Forschungsstand so zusammen, wie du es einem geschätzten Kollegen im kollegialen Gespräch erzählen würdest. Selbstbewusst, direkt, auf Augenhöhe — kein Vorlesungston, kein Hedging, sondern klare Ansagen mit Evidenz. Quellenverweise [Erstautor Jahr] einbauen. Länge dynamisch je nach Themenkomplexität.
 
-### Was könnte ein Kollege einwenden?
+### Einwandbehandlung
 1–3 typische Gegenargumente, die ein skeptischer Kollege im klinischen Alltag bringen würde, mit direkten Konter-Antworten im gleichen kollegialen Ton.
 
 ## Literatursynthese
@@ -1171,7 +1171,7 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
         if (qpMatch) {
             const qpFull = qpMatch[1].trim();
             // Einwand-Sektion abspalten
-            const objMatch = qpFull.match(/#{1,4}\s*Was könnte ein Kollege einwenden\??\s*\n([\s\S]*)/i);
+            const objMatch = qpFull.match(/#{1,4}\s*(?:Einwandbehandlung|Was könnte ein Kollege einwenden\??)\s*\n([\s\S]*)/i);
             if (objMatch) {
                 quickPitchText = qpFull.substring(0, objMatch.index).trim();
                 objectionsText = objMatch[1].trim();
@@ -1197,7 +1197,7 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
             document.getElementById('quickpitch-content').innerHTML = `<p>${renderMarkdown(quickPitchText)}</p>`;
             if (objectionsText) {
                 document.getElementById('quickpitch-objections').innerHTML =
-                    `<h3>Was könnte ein Kollege einwenden?</h3><p>${renderMarkdown(objectionsText)}</p>`;
+                    `<h3>Einwandbehandlung</h3><p>${renderMarkdown(objectionsText)}</p>`;
             } else {
                 document.getElementById('quickpitch-objections').innerHTML = '';
             }
