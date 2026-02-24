@@ -73,17 +73,18 @@ Freitext-Eingabe auf Deutsch → PubMed-Suche → Claude-Synthese → wissenscha
 | Passwort-Schutz | `b0cd7f2` | SHA-256 gehashtes Passwort im Code. Auth-Gate versteckt App-Content. localStorage für Session-Persistenz. Kein echter Schutz (Hash sichtbar), reicht für Zufallsbesucher. |
 | MeSH-Term Optimierung | `178fc6c` | Neue Funktionen: `lookupMeSH()` (esearch + esummary, 5s Timeout), `resolveMeSHTerms()` (parallel via Promise.allSettled), `displayMeSHTerms()`. Query-Begriffe werden gegen PubMed MeSH-DB validiert: gefundene → `"Term"[MeSH]`, nicht-gefundene → `term[tiab]`. Suchstrategie jetzt 4-stufig. UI: Grüne MeSH-Tags + graue Freitext-Anzeige unter Suchfeld. |
 | Publikationstyp-Filter | `178fc6c`, `2f1d7b2`, `ce07f32` | 5 Checkboxen (Syst. Reviews, Meta-Analysen, RCTs, Fallberichte, Editorials) mit localStorage-Persistenz. Ersetzen hardcoded Review-Filter. Auto-Fallback bei <5 Treffern. Info-Popup mit Evidenzhierarchie-Erklärung (Purple-Akzent, Neon-Green Labels). |
+| Quick-Pitch Block | *pending commit* | Neuer Output-Block oberhalb der Literatursynthese. Amber-Akzentfarbe (#FFB800) als vierte Farbe im Design-System. Claude System Prompt erweitert um Quick-Pitch-Instruktionen (Tonfall: Oberarzt kollegial). User Message fordert 3 statt 2 Sektionen. Regex-Parsing extrahiert Quick-Pitch + Einwand-Sektion. Fallback: Section wird ausgeblendet wenn Claude sie nicht generiert. |
 
 ---
 
 ## Architektur (finale Version)
 
 ```
-index.html (1112 Zeilen, eine einzige Datei)
+index.html (1228 Zeilen, eine einzige Datei)
 ├── CSS (~180 Zeilen)
-│   ├── Design-System: CSS Custom Properties (--green, --purple, --orange, --base, --surface...)
+│   ├── Design-System: CSS Custom Properties (--green, --purple, --orange, --amber, --base, --surface...)
 │   ├── Layout: max-width 900px, responsive
-│   ├── Komponenten: Search, Filters, Status, MeSH-Display, 3 Output-Sections, Auth-Gate
+│   ├── Komponenten: Search, Filters, Status, MeSH-Display, 4 Output-Sections (Quick-Pitch, Synthese, Fragen, Quellen), Auth-Gate
 │   └── Animationen: Spinner, Pulse-Glow, Hover-Transitions
 │
 ├── HTML (~70 Zeilen)
@@ -93,7 +94,7 @@ index.html (1112 Zeilen, eine einzige Datei)
 │   │   ├── Suchformular
 │   │   ├── Publikationstyp-Filter + Info-Popup
 │   │   ├── Status + MeSH-Display
-│   │   └── Output (Synthese | Fragen | Quellen)
+│   │   └── Output (Quick-Pitch | Synthese | Fragen | Quellen)
 │   └── Keine externen Abhängigkeiten (nur Google Fonts)
 │
 └── JavaScript (~860 Zeilen)
@@ -131,7 +132,7 @@ EFetch: XML → Titel, Autoren, Journal, Jahr, Abstract
   ↓
 Claude Synthese (claude-sonnet-4-6, max 4096 Tokens)
   ↓ (Fallback: Top-30 Abstracts bei Token-Überschreitung)
-Output: Literatursynthese + Offene Fragen + Quellenliste
+Output: Quick-Pitch + Literatursynthese + Offene Fragen + Quellenliste
 ```
 
 ## Externe APIs
@@ -165,6 +166,11 @@ Output: Literatursynthese + Offene Fragen + Quellenliste
 - **MeSH-Validierung:** Begriffe gegen echte MeSH-DB validieren statt blind `[MeSH]`-Tags setzen.
 - **Fallback-Kaskade:** 4 Stufen stellen sicher, dass auch bei Edge Cases Treffer gefunden werden.
 - **UI-gesteuerte Filter:** Flexibler als hardcoded Review-Filter. Der Nutzer kontrolliert die Evidenzstufe.
+
+### Prompt-Design
+- **Tonfall-Instruktionen:** Metaphern wie "wie du es einem geschätzten Kollegen beim Kaffee erzählen würdest" produzieren natürlicheren Output als formale Stilbeschreibungen.
+- **Drei-Sektionen-Parsing:** Regex-basiertes Aufteilen von Claude-Output in 3+ Sektionen ist fragil — Reihenfolge muss im Prompt strikt vorgegeben und im Code gespiegelt werden. Bei >3 Sektionen wäre ein Delimiter-basierter Ansatz robuster.
+- **Einwand-Antizipation:** Das "Was könnte ein Kollege einwenden?"-Pattern erzeugt praxistauglichen Output, weil es Claude zwingt, Gegenargumente und Konter konkret auszuformulieren.
 
 ### UI/UX
 - **Tooltips auf Deutsch:** Wichtig für den nicht-technischen Endnutzer.

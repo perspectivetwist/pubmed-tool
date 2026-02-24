@@ -21,6 +21,8 @@
             --green-glow: 0 0 20px rgba(0, 255, 179, 0.15);
             --purple-glow: 0 0 20px rgba(157, 78, 221, 0.15);
             --orange-glow: 0 0 20px rgba(255, 107, 53, 0.15);
+            --amber: #FFB800;
+            --amber-glow: 0 0 20px rgba(255, 184, 0, 0.15);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -161,6 +163,19 @@
         }
         .section p { margin-bottom: 0.85rem; color: var(--text); }
         .section li { margin-bottom: 0.5rem; margin-left: 1.25rem; color: var(--text); }
+
+        /* Quick-Pitch Section — amber accent */
+        #quickpitch-section { border-left: 3px solid var(--amber); }
+        #quickpitch-section:hover { border-color: var(--amber); box-shadow: var(--amber-glow); }
+        #quickpitch-section h2 { color: var(--amber); border-bottom: 1px solid rgba(255, 184, 0, 0.2); }
+        #quickpitch-section .qp-objections { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 184, 0, 0.15); }
+        #quickpitch-section .qp-objections h3 {
+            font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+            color: var(--amber); margin-bottom: 0.75rem; font-family: 'IBM Plex Mono', monospace;
+        }
+        #quickpitch-section .qp-objection-item { margin-bottom: 0.85rem; }
+        #quickpitch-section .qp-objection-item strong { color: var(--text); }
+        #quickpitch-section .qp-objection-item p { color: var(--text-dim); margin-top: 0.2rem; }
 
         /* Synthese Section — green accent */
         #synthesis-section { border-left: 3px solid var(--green); }
@@ -304,6 +319,11 @@
     <div id="mesh-terms"></div>
 
     <div id="output">
+        <div id="quickpitch-section" class="section">
+            <h2>Quick-Pitch</h2>
+            <div id="quickpitch-content"></div>
+            <div id="quickpitch-objections" class="qp-objections"></div>
+        </div>
         <div id="synthesis-section" class="section">
             <h2>Literatursynthese</h2>
             <div id="synthesis-content"></div>
@@ -939,7 +959,14 @@ async function synthesizeWithClaude(articles, userQuery) {
 
     const systemPrompt = `Du bist ein akademischer Literaturanalyst mit Spezialisierung auf Neurologie und Neurowissenschaften. Du schreibst für einen Facharzt für Neurologie.
 
-Dein Output hat die Qualität einer wissenschaftlichen Einleitung (Introduction) eines Fachartikels.
+Dein Output hat DREI Teile: Quick-Pitch, Literatursynthese und Offene Fragen.
+
+## Quick-Pitch (ERSTER Teil deiner Antwort)
+Der Quick-Pitch ist eine mündlich verwendbare Zusammenfassung des Forschungsstands. Tonfall: Erfahrener Facharzt/Oberarzt im kollegialen Gespräch — selbstbewusst, direkt, auf Augenhöhe. KEIN Akademiker-Deutsch, sondern Flur-/Meetingsprache, wie man es einem geschätzten Kollegen beim Kaffee erzählen würde. Länge dynamisch je nach Themenkomplexität (2–5 Absätze). Quellenverweise [Erstautor Jahr] auch hier verwenden.
+Danach ein Unterabschnitt "Was könnte ein Kollege einwenden?" mit 1–3 typischen Gegenargumenten aus dem klinischen Alltag und direkten Konter-Antworten im gleichen Ton.
+
+## Literatursynthese und Offene Fragen
+Die Qualität einer wissenschaftlichen Einleitung (Introduction) eines Fachartikels.
 
 Strikte Regeln:
 - Sprache: IMMER Deutsch, aber Fachbegriffe dürfen in Klammern auf Englisch ergänzt werden
@@ -957,7 +984,13 @@ Hier sind ${articles.length} relevante PubMed-Abstracts:
 
 ${abstractsText}
 
-Erstelle folgende zwei Sektionen:
+Erstelle folgende drei Sektionen IN DIESER REIHENFOLGE:
+
+## Quick-Pitch
+Fasse den Forschungsstand so zusammen, wie du es einem geschätzten Kollegen im kollegialen Gespräch erzählen würdest. Selbstbewusst, direkt, auf Augenhöhe — kein Vorlesungston, kein Hedging, sondern klare Ansagen mit Evidenz. Quellenverweise [Erstautor Jahr] einbauen. Länge dynamisch je nach Themenkomplexität.
+
+### Was könnte ein Kollege einwenden?
+1–3 typische Gegenargumente, die ein skeptischer Kollege im klinischen Alltag bringen würde, mit direkten Konter-Antworten im gleichen kollegialen Ton.
 
 ## Literatursynthese
 Verfasse 3–5 Absätze, die den aktuellen Forschungsstand zur Fragestellung zusammenfassen. Struktur:
@@ -1114,11 +1147,7 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
         // Claude Synthese
         const synthesis = await synthesizeWithClaude(articles, rawQuery);
 
-        // Synthese in zwei Sektionen aufteilen
-        const parts = synthesis.split(/## Offene Fragen/i);
-        const synthesisText = (parts[0] || '').replace(/^## Literatursynthese\s*/i, '').trim();
-        const questionsText = (parts[1] || '').replace(/^[^\n]*\n/, '').trim();
-
+        // Output in drei Sektionen aufteilen: Quick-Pitch, Synthese, Offene Fragen
         // Markdown-artiges Rendering
         function renderMarkdown(text) {
             return text
@@ -1126,6 +1155,44 @@ document.getElementById('search-form').addEventListener('submit', async (e) => {
                 .replace(/\*(.*?)\*/g, '<em>$1</em>')
                 .replace(/\n\n/g, '</p><p>')
                 .replace(/\n/g, '<br>');
+        }
+
+        // Quick-Pitch extrahieren
+        let quickPitchText = '';
+        let objectionsText = '';
+        let remaining = synthesis;
+
+        const qpMatch = remaining.match(/## Quick-Pitch\s*\n([\s\S]*?)(?=## Literatursynthese)/i);
+        if (qpMatch) {
+            const qpFull = qpMatch[1].trim();
+            // Einwand-Sektion abspalten
+            const objMatch = qpFull.match(/###?\s*Was könnte ein Kollege einwenden\??\s*\n([\s\S]*)/i);
+            if (objMatch) {
+                quickPitchText = qpFull.substring(0, objMatch.index).trim();
+                objectionsText = objMatch[1].trim();
+            } else {
+                quickPitchText = qpFull;
+            }
+            remaining = remaining.substring(qpMatch.index + qpMatch[0].length);
+        }
+
+        // Synthese und Offene Fragen aufteilen
+        const parts = remaining.split(/## Offene Fragen/i);
+        const synthesisText = (parts[0] || '').replace(/^## Literatursynthese\s*/i, '').trim();
+        const questionsText = (parts[1] || '').replace(/^[^\n]*\n/, '').trim();
+
+        // Quick-Pitch rendern
+        if (quickPitchText) {
+            document.getElementById('quickpitch-content').innerHTML = `<p>${renderMarkdown(quickPitchText)}</p>`;
+            if (objectionsText) {
+                document.getElementById('quickpitch-objections').innerHTML =
+                    `<h3>Was könnte ein Kollege einwenden?</h3><p>${renderMarkdown(objectionsText)}</p>`;
+            } else {
+                document.getElementById('quickpitch-objections').innerHTML = '';
+            }
+            document.getElementById('quickpitch-section').style.display = 'block';
+        } else {
+            document.getElementById('quickpitch-section').style.display = 'none';
         }
 
         document.getElementById('synthesis-content').innerHTML = `<p>${renderMarkdown(synthesisText)}</p>`;
